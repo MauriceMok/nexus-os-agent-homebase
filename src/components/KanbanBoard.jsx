@@ -4,6 +4,7 @@ import { useAppStore } from '../store/StoreContext'
 import { useToast } from './Toast'
 import { CreateTaskModal, EditTaskModal } from './TaskModal'
 import { ConfirmModal } from './Modal'
+import { formatRelative } from '../store/useStore'
 
 const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 }
 
@@ -238,7 +239,18 @@ function TaskCard({ task, agents, onDragStart, onDragEnd, isDragging, onEdit, on
         ) : (
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>Unassigned</span>
         )}
-        <div className="card-eta"><span>⏱</span><span>{task.eta}</span></div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
+          {task.col === 'deployed' && task.deployedAt ? (
+            <div className="card-eta" style={{ color: 'var(--green)' }}>
+              <span>🚀</span><span>{formatRelative(task.deployedAt)}</span>
+            </div>
+          ) : (
+            <div className="card-eta"><span>⏱</span><span>{task.eta}</span></div>
+          )}
+          <div className="card-eta" style={{ color: 'var(--text-muted)' }}>
+            <span>📅</span><span>{formatRelative(task.createdAt)}</span>
+          </div>
+        </div>
       </div>
     </div>
   )

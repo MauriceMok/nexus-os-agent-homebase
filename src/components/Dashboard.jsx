@@ -1,27 +1,54 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../store/StoreContext'
 import { useToast } from './Toast'
 import { CreateTaskModal } from './TaskModal'
 import { CreateAgentModal } from './AgentModal'
-import { INITIAL_FEED, LOG_TEMPLATES } from '../data/feed'
+
+const LOG_MSG_TEMPLATES = [
+  { type: 'info',    msgs: ['Web crawl complete — {n} URLs indexed', 'Report section drafted — {w} words', 'Citation check passed — {n} sources'] },
+  { type: 'success', msgs: ['ROAS improved +{n}% on campaign', 'A/B test variant B winning at {n}% confidence', 'Audience updated — {n}K users'] },
+  { type: 'code',    msgs: ['Refactor complete — complexity -{n}%', 'Tests passing: {n}/{n} green', 'Image built — {n}MB optimized'] },
+  { type: 'info',    msgs: ['{n} posts scheduled in batch', 'SEO score: {n}/100', '{n} sections outlined'] },
+  { type: 'success', msgs: ['Workflow: {n} steps completed', 'Sync: {n} records updated', '{n} automations triggered'] },
+  { type: 'warning', msgs: ['API latency {n}ms — retrying', 'Rate limit at {n}% — throttling', 'Memory {n}% — optimizing'] },
+]
 
 export default function Dashboard() {
   const { tasks, agents, missions, exportData, resetData } = useAppStore()
   const toast = useToast()
-  const [feed, setFeed] = useState(INITIAL_FEED.slice(0, 6))
+  const [feed, setFeed] = useState([])
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showCreateAgent, setShowCreateAgent] = useState(false)
+  const agentsRef = useRef(agents)
+  useEffect(() => { agentsRef.current = agents }, [agents])
+
+  // Seed initial feed from real agents on mount
+  useEffect(() => {
+    const now = new Date()
+    const ts = () => [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':')
+    const seed = (agentsRef.current.length ? agentsRef.current : []).slice(0, 5).map((agent, i) => {
+      const tpl = LOG_MSG_TEMPLATES[i % LOG_MSG_TEMPLATES.length]
+      const msgTpl = tpl.msgs[0]
+      const msg = msgTpl.replace(/{n}/g, () => Math.floor(Math.random()*900+10)).replace(/{w}/g, () => Math.floor(Math.random()*2000+200))
+      return { id: i, time: ts(), agent: agent.name, type: tpl.type, msg }
+    })
+    setFeed(seed)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const t = setInterval(() => {
-      const tpl = LOG_TEMPLATES[Math.floor(Math.random() * LOG_TEMPLATES.length)]
+      const currentAgents = agentsRef.current
+      if (!currentAgents.length) return
+      const agent = currentAgents[Math.floor(Math.random() * currentAgents.length)]
+      const tpl = LOG_MSG_TEMPLATES[Math.floor(Math.random() * LOG_MSG_TEMPLATES.length)]
       const msgTpl = tpl.msgs[Math.floor(Math.random() * tpl.msgs.length)]
       const msg = msgTpl
         .replace(/{n}/g, () => Math.floor(Math.random() * 900 + 10))
         .replace(/{w}/g, () => Math.floor(Math.random() * 2000 + 200))
       const now = new Date()
       const ts = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':')
-      setFeed(prev => [{ id: Date.now(), time: ts, agent: tpl.agent, type: tpl.type, msg }, ...prev].slice(0, 8))
+      setFeed(prev => [{ id: Date.now(), time: ts, agent: agent.name, type: tpl.type, msg }, ...prev].slice(0, 8))
     }, 3000)
     return () => clearInterval(t)
   }, [])

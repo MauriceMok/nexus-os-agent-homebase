@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useAppStore } from '../store/StoreContext'
 import { useToast } from './Toast'
 import { CreateAgentModal, EditAgentModal } from './AgentModal'
@@ -8,8 +8,16 @@ const STATUS_COLORS = { active: '#00E676', idle: '#FFB800', standby: '#4A5568' }
 const STATUS_LABELS = { active: 'ACTIVE', idle: 'IDLE', standby: 'STANDBY' }
 
 export default function AgentRoster() {
-  const { agents, deleteAgent, updateAgent, exportData } = useAppStore()
+  const { agents, tasks, deleteAgent, updateAgent, exportData } = useAppStore()
   const toast = useToast()
+  // Live active task counts per agent
+  const liveTaskCounts = useMemo(() => {
+    const map = {}
+    agents.forEach(a => {
+      map[a.id] = tasks.filter(t => t.agent === a.id && t.col !== 'deployed').length
+    })
+    return map
+  }, [agents, tasks])
   const [showCreate, setShowCreate] = useState(false)
   const [editAgent, setEditAgent] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -49,12 +57,12 @@ export default function AgentRoster() {
         borderTop:'2px solid var(--cyan)',
       }}>
         {[
-          {label:'TOTAL',val:agents.length,color:'var(--cyan)'},
+          {label:'TOTAL AGENTS',val:agents.length,color:'var(--cyan)'},
           {label:'ACTIVE',val:agents.filter(a=>a.status==='active').length,color:'var(--green)'},
           {label:'IDLE',val:agents.filter(a=>a.status==='idle').length,color:'var(--gold)'},
           {label:'STANDBY',val:agents.filter(a=>a.status==='standby').length,color:'var(--text-muted)'},
-          {label:'TOTAL COMPLETED',val:agents.reduce((s,a)=>s+a.completed,0).toLocaleString(),color:'var(--violet)'},
-          {label:'AVG UPTIME',val:`${agents.length ? (agents.reduce((s,a)=>s+parseFloat(a.uptime),0)/agents.length).toFixed(1) : 0}%`,color:'var(--cyan)'},
+          {label:'TASKS IN FLIGHT',val:Object.values(liveTaskCounts).reduce((s,v)=>s+v,0),color:'var(--cyan)'},
+          {label:'TOTAL DEPLOYED',val:agents.reduce((s,a)=>s+a.completed,0).toLocaleString(),color:'var(--violet)'},
         ].map((stat,i) => (
           <div key={i} style={{flex:1,textAlign:'center',borderRight:i<5?'1px solid var(--border)':'none',paddingRight:12}}>
             <div style={{fontFamily:'var(--font-brand)',fontSize:22,fontWeight:700,color:stat.color}}>{stat.val}</div>
@@ -85,6 +93,7 @@ export default function AgentRoster() {
           <AgentCard
             key={agent.id}
             agent={agent}
+            liveTaskCount={liveTaskCounts[agent.id] ?? 0}
             delay={idx * 0.05}
             onEdit={() => setEditAgent(agent)}
             onDelete={() => setDeleteConfirm(agent)}
@@ -108,7 +117,7 @@ export default function AgentRoster() {
   )
 }
 
-function AgentCard({ agent, delay, onEdit, onDelete, onCycleStatus }) {
+function AgentCard({ agent, liveTaskCount, delay, onEdit, onDelete, onCycleStatus }) {
   const statusColor = STATUS_COLORS[agent.status] || '#4A5568'
   const statusLabel = STATUS_LABELS[agent.status] || 'UNKNOWN'
 
@@ -158,12 +167,12 @@ function AgentCard({ agent, delay, onEdit, onDelete, onCycleStatus }) {
 
       <div className="agent-stats">
         <div className="agent-stat">
-          <div className="agent-stat-val">{agent.tasks}</div>
+          <div className="agent-stat-val" style={{ color: liveTaskCount > 0 ? agent.color : undefined }}>{liveTaskCount}</div>
           <div className="agent-stat-lbl">Active Tasks</div>
         </div>
         <div className="agent-stat">
           <div className="agent-stat-val">{agent.completed}</div>
-          <div className="agent-stat-lbl">Completed</div>
+          <div className="agent-stat-lbl">Deployed</div>
         </div>
         <div className="agent-stat">
           <div className="agent-stat-val">{agent.uptime}</div>

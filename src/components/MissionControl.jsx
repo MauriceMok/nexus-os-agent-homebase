@@ -4,15 +4,20 @@ import { useToast } from './Toast'
 import { CreateMissionModal, EditMissionModal } from './MissionModal'
 import { ConfirmModal } from './Modal'
 
-const WEEK_DATA = [
-  {day:'Mon',tasks:24,deployed:18},{day:'Tue',tasks:31,deployed:27},
-  {day:'Wed',tasks:28,deployed:22},{day:'Thu',tasks:41,deployed:38},
-  {day:'Fri',tasks:35,deployed:31},{day:'Sat',tasks:19,deployed:15},
-  {day:'Sun',tasks:21,deployed:17},
-]
+// Build real weekly data from taskHistory
+function buildWeekData(taskHistory) {
+  const today = new Date()
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today)
+    d.setDate(d.getDate() - (6 - i))
+    const key = d.toISOString().slice(0, 10)
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' })
+    return { day: dayName, deployed: taskHistory[key] || 0 }
+  })
+}
 
 export default function MissionControl() {
-  const { tasks, agents, missions, deleteMission, exportData } = useAppStore()
+  const { tasks, agents, missions, taskHistory, deleteMission, exportData } = useAppStore()
   const toast = useToast()
   const [showCreate, setShowCreate] = useState(false)
   const [editMission, setEditMission] = useState(null)
@@ -149,16 +154,16 @@ export default function MissionControl() {
         </div>
       </div>
 
-      {/* Weekly Bar Chart */}
+      {/* Weekly Bar Chart — real data */}
       <div className="panel" style={{marginBottom:20}}>
         <div className="panel-header">
           <div className="panel-icon" style={{background:'var(--gold-dim)'}}>📈</div>
           <div>
             <div className="panel-title">WEEKLY PERFORMANCE</div>
-            <div className="panel-sub">Tasks created vs. deployed — last 7 days</div>
+            <div className="panel-sub">Tasks deployed per day — last 7 days (live)</div>
           </div>
         </div>
-        <div className="panel-body"><WeeklyChart data={WEEK_DATA}/></div>
+        <div className="panel-body"><WeeklyChart data={buildWeekData(taskHistory)}/></div>
       </div>
 
       {/* Agent Leaderboard */}
@@ -284,41 +289,53 @@ function DonutChart({ deployed, active, review, total }) {
 }
 
 function WeeklyChart({ data }) {
-  const maxTasks = Math.max(...data.map(d => d.tasks))
+  const maxVal = Math.max(...data.map(d => d.deployed), 1)
+  const total = data.reduce((s, d) => s + d.deployed, 0)
   return (
     <div style={{ position:'relative',paddingBottom:28 }}>
-      <div style={{ display:'flex',gap:12,height:120,alignItems:'flex-end' }}>
-        {data.map((d, i) => (
-          <div key={i} style={{ flex:1,display:'flex',gap:3,alignItems:'flex-end' }}>
-            <div style={{
-              flex:1,borderRadius:'3px 3px 0 0',minHeight:4,
-              height:`${(d.tasks/maxTasks)*100}%`,
-              background:'linear-gradient(180deg,var(--cyan),rgba(0,245,255,0.2))',
-              transition:'height 1s ease',
-            }}/>
-            <div style={{
-              flex:1,borderRadius:'3px 3px 0 0',minHeight:4,
-              height:`${(d.deployed/maxTasks)*100}%`,
-              background:'linear-gradient(180deg,var(--green),rgba(0,230,118,0.2))',
-              transition:'height 1.2s ease',
-            }}/>
+      {total === 0 && (
+        <div style={{
+          textAlign:'center',padding:'32px',fontFamily:'var(--font-mono)',
+          fontSize:11,color:'var(--text-muted)',
+        }}>
+          No tasks deployed this week yet — move cards to DEPLOYED on the Kanban board to see data here.
+        </div>
+      )}
+      {total > 0 && (
+        <>
+          <div style={{ display:'flex',gap:12,height:120,alignItems:'flex-end' }}>
+            {data.map((d, i) => (
+              <div key={i} style={{ flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:4,justifyContent:'flex-end' }}>
+                {d.deployed > 0 && (
+                  <span style={{fontFamily:'var(--font-brand)',fontSize:11,fontWeight:700,color:'var(--green)'}}>{d.deployed}</span>
+                )}
+                <div style={{
+                  width:'100%',borderRadius:'3px 3px 0 0',minHeight:4,
+                  height:`${(d.deployed/maxVal)*100}%`,
+                  background:'linear-gradient(180deg,var(--green),rgba(0,230,118,0.15))',
+                  transition:'height 1.2s ease',
+                  boxShadow: d.deployed > 0 ? '0 0 8px rgba(0,230,118,0.4)' : 'none',
+                }}/>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div style={{ display:'flex',gap:12,marginTop:8 }}>
-        {data.map((d,i) => (
-          <div key={i} style={{flex:1,textAlign:'center',fontFamily:'var(--font-mono)',fontSize:9,color:'var(--text-muted)'}}>
-            {d.day}
+          <div style={{ display:'flex',gap:12,marginTop:8 }}>
+            {data.map((d, i) => (
+              <div key={i} style={{flex:1,textAlign:'center',fontFamily:'var(--font-mono)',fontSize:9,color:'var(--text-muted)'}}>
+                {d.day}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div style={{ display:'flex',gap:16,marginTop:12 }}>
-        {[{c:'var(--cyan)',l:'Created'},{c:'var(--green)',l:'Deployed'}].map(x=>(
-          <div key={x.l} style={{display:'flex',alignItems:'center',gap:6}}>
-            <div style={{width:12,height:4,borderRadius:2,background:x.c}}/>
-            <span style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--text-muted)'}}>{x.l}</span>
-          </div>
-        ))}
+        </>
+      )}
+      <div style={{ display:'flex',alignItems:'center',gap:16,marginTop:12,paddingTop:8,borderTop:'1px solid var(--border)' }}>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <div style={{width:12,height:4,borderRadius:2,background:'var(--green)'}}/>
+          <span style={{fontFamily:'var(--font-mono)',fontSize:10,color:'var(--text-muted)'}}>Deployed this week</span>
+        </div>
+        <span style={{fontFamily:'var(--font-brand)',fontSize:14,fontWeight:700,color:'var(--green)',marginLeft:'auto'}}>
+          {total} total
+        </span>
       </div>
     </div>
   )
