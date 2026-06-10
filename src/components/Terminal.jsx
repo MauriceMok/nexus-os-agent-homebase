@@ -19,16 +19,19 @@ const ts = () => {
 }
 
 export default function Terminal() {
-  const { tasks, agents, missions, taskHistory } = useAppStore()
+  const { tasks, agents, missions, taskHistory, events } = useAppStore()
   const [lines, setLines] = useState([])
   const [input, setInput] = useState('')
   const [history, setHistory] = useState([])
   const [histIdx, setHistIdx] = useState(-1)
   const bodyRef = useRef(null)
   const agentsRef = useRef(agents)
+  const eventsRef = useRef([])
+  const lastEventIdRef = useRef(null)
 
-  // Keep ref in sync so interval always has fresh agent list
+  // Keep refs in sync so interval always has fresh data
   useEffect(() => { agentsRef.current = agents }, [agents])
+  useEffect(() => { eventsRef.current = events }, [events])
 
   // Boot lines on mount
   useEffect(() => {
@@ -40,10 +43,33 @@ export default function Terminal() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Auto-feed: pick random real agent + random message template
+  // Auto-feed: mix real events + simulated agent activity
   useEffect(() => {
+    let simCounter = 0
     const t = setInterval(() => {
       const currentAgents = agentsRef.current
+      const currentEvents = eventsRef.current
+
+      // Alternate: real event every other tick, simulated activity in between
+      simCounter++
+      if (simCounter % 3 === 0 && currentEvents.length > 0) {
+        // Pick most recent unshown event
+        const latestEvent = currentEvents[0]
+        if (latestEvent && latestEvent.id !== lastEventIdRef.current) {
+          lastEventIdRef.current = latestEvent.id
+          setLines(prev => [...prev, {
+            id: `ev-${latestEvent.id}`,
+            time: latestEvent.time,
+            agent: latestEvent.agent,
+            type: latestEvent.type,
+            msg: `${latestEvent.icon} ${latestEvent.msg}`,
+            isLog: false,
+          }])
+          return
+        }
+      }
+
+      // Otherwise, simulated agent activity
       if (!currentAgents.length) return
       const agent = currentAgents[Math.floor(Math.random() * currentAgents.length)]
       const tpl = LOG_MSG_TEMPLATES[Math.floor(Math.random() * LOG_MSG_TEMPLATES.length)]
@@ -78,6 +104,7 @@ export default function Terminal() {
           '  tasks <col>         — Filter: backlog|briefed|active|review|deployed',
           '  missions            — List all active missions',
           '  agent <name>        — Inspect a specific agent',
+          '  events              — Show recent activity log',
           '  ping <agent>        — Ping an agent',
           '  deploy <name>       — Deploy simulation',
           '  history             — Show 7-day deployment stats',
@@ -219,6 +246,19 @@ export default function Terminal() {
         ]
       }
 
+      case 'events': {
+        if (!events.length) return ['  No events recorded yet. Perform some actions to see them here.']
+        const limit = Math.min(parseInt(args[0]) || 20, 50)
+        const shown = events.slice(0, limit)
+        return [
+          `  Activity Log (last ${shown.length} of ${events.length} events):`,
+          '  ─────────────────────────────────────────────',
+          ...shown.map(ev => `  ${ev.time}  [${ev.agent}]  ${ev.icon} ${ev.msg}`),
+          '  ─────────────────────────────────────────────',
+          '  Events are recorded automatically for all actions.',
+        ]
+      }
+
       case 'clear':
         return null
 
@@ -226,7 +266,7 @@ export default function Terminal() {
         if (!cmd) return null
         return [`  Command not found: "${cmd}" — type "help" for available commands`]
     }
-  }, [agents, tasks, missions, taskHistory])
+  }, [agents, tasks, missions, taskHistory, events])
 
   const handleSubmit = (e) => {
     e.preventDefault()

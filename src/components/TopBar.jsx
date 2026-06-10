@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../store/StoreContext'
 
 const VIEW_META = {
@@ -9,21 +9,12 @@ const VIEW_META = {
   terminal: { icon: '▶', title: 'COMMS TERMINAL', sub: 'Live Agent Feed' },
 }
 
-const TICKER_BASE = [
-  { label: 'NOVA: CI/CD deployed', type: 'ok' },
-  { label: 'ARIA: 847 data pts scraped', type: 'ok' },
-  { label: 'CIPHER: Rate limiter shipped', type: 'ok' },
-  { label: 'ORION: CTR +2.3% ↑', type: 'ok' },
-  { label: 'NOVA: Webhook latency spike', type: 'warn' },
-  { label: 'VEGA: Q4 forecast complete', type: 'ok' },
-  { label: 'ECHO: 7 emails drafted', type: 'ok' },
-  { label: 'CIPHER: Test coverage 98.4%', type: 'ok' },
-]
-
 export default function TopBar({ activeView }) {
-  const { agents, tasks } = useAppStore()
+  const { agents, tasks, events } = useAppStore()
   const [time, setTime] = useState(new Date())
   const meta = VIEW_META[activeView] || VIEW_META.dashboard
+  const eventsRef = useRef(events)
+  useEffect(() => { eventsRef.current = events }, [events])
 
   const activeAgents = agents.filter(a => a.status === 'active').length
   const activeTasks = tasks.filter(t => t.col === 'active').length
@@ -36,7 +27,41 @@ export default function TopBar({ activeView }) {
   const pad = n => String(n).padStart(2, '0')
   const timeStr = `${pad(time.getHours())}:${pad(time.getMinutes())}:${pad(time.getSeconds())}`
 
-  const doubled = [...TICKER_BASE, ...TICKER_BASE]
+  // Build ticker from recent events + agent status summary
+  const tickerItems = (() => {
+    const currentEvents = eventsRef.current || []
+    const items = []
+
+    // Add recent events (last 6)
+    for (const ev of currentEvents.slice(0, 6)) {
+      const shortMsg = ev.msg.length > 45 ? ev.msg.slice(0, 42) + '...' : ev.msg
+      items.push({
+        label: `${ev.agent}: ${shortMsg}`,
+        type: ev.type === 'warning' ? 'warn' : 'ok',
+      })
+    }
+
+    // If not enough events, fill with agent status summaries
+    if (items.length < 6 && agents.length > 0) {
+      for (const agent of agents.slice(0, 6 - items.length)) {
+        const agentTasks = tasks.filter(t => t.agent === agent.id && t.col !== 'deployed').length
+        items.push({
+          label: `${agent.name}: ${agent.status.toUpperCase()} · ${agentTasks} active tasks · ${agent.completed} completed`,
+          type: agent.status === 'active' ? 'ok' : agent.status === 'idle' ? 'ok' : 'ok',
+        })
+      }
+    }
+
+    // Fallback
+    if (items.length === 0) {
+      items.push({ label: 'NEXUS OS — All systems nominal', type: 'ok' })
+    }
+
+    return items
+  })()
+
+  // Double for seamless loop
+  const doubled = tickerItems.length > 0 ? [...tickerItems, ...tickerItems] : [{ label: 'NEXUS OS', type: 'ok' }, { label: 'NEXUS OS', type: 'ok' }]
 
   return (
     <header className="topbar">

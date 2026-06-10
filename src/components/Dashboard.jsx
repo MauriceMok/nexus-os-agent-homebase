@@ -3,6 +3,7 @@ import { useAppStore } from '../store/StoreContext'
 import { useToast } from './Toast'
 import { CreateTaskModal } from './TaskModal'
 import { CreateAgentModal } from './AgentModal'
+import { formatTime } from '../store/useStore'
 
 const LOG_MSG_TEMPLATES = [
   { type: 'info',    msgs: ['Web crawl complete — {n} URLs indexed', 'Report section drafted — {w} words', 'Citation check passed — {n} sources'] },
@@ -14,31 +15,74 @@ const LOG_MSG_TEMPLATES = [
 ]
 
 export default function Dashboard() {
-  const { tasks, agents, missions, exportData, resetData } = useAppStore()
+  const { tasks, agents, missions, events, exportData, resetData } = useAppStore()
   const toast = useToast()
   const [feed, setFeed] = useState([])
   const [showCreateTask, setShowCreateTask] = useState(false)
   const [showCreateAgent, setShowCreateAgent] = useState(false)
   const agentsRef = useRef(agents)
+  const eventsRef = useRef(events)
+  const lastEventIdRef = useRef(null)
   useEffect(() => { agentsRef.current = agents }, [agents])
+  useEffect(() => { eventsRef.current = events }, [events])
 
-  // Seed initial feed from real agents on mount
+  // Seed initial feed from real events + simulated
   useEffect(() => {
     const now = new Date()
-    const ts = () => [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':')
-    const seed = (agentsRef.current.length ? agentsRef.current : []).slice(0, 5).map((agent, i) => {
+    const timeStr = () => [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':')
+    const currentEvents = eventsRef.current || []
+    const currentAgents = agentsRef.current || []
+
+    // Start with recent real events (last 5)
+    const realEntries = currentEvents.slice(0, 5).map(ev => ({
+      id: `feed-ev-${ev.id}`,
+      time: ev.time,
+      agent: ev.agent,
+      type: ev.type,
+      msg: `${ev.icon} ${ev.msg}`,
+    }))
+
+    // Fill remaining with simulated
+    const simEntries = []
+    const needed = Math.max(0, 5 - realEntries.length)
+    for (let i = 0; i < needed; i++) {
+      if (currentAgents.length === 0) break
+      const agent = currentAgents[i % currentAgents.length]
       const tpl = LOG_MSG_TEMPLATES[i % LOG_MSG_TEMPLATES.length]
       const msgTpl = tpl.msgs[0]
       const msg = msgTpl.replace(/{n}/g, () => Math.floor(Math.random()*900+10)).replace(/{w}/g, () => Math.floor(Math.random()*2000+200))
-      return { id: i, time: ts(), agent: agent.name, type: tpl.type, msg }
-    })
-    setFeed(seed)
+      simEntries.push({ id: i, time: timeStr(), agent: agent.name, type: tpl.type, msg })
+    }
+
+    setFeed([...realEntries, ...simEntries])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Live feed: mix real events + simulated activity
   useEffect(() => {
+    let tick = 0
     const t = setInterval(() => {
+      tick++
       const currentAgents = agentsRef.current
+      const currentEvents = eventsRef.current
+
+      // Every 3rd tick, try to show a real event
+      if (tick % 3 === 0 && currentEvents.length > 0) {
+        const latestEvent = currentEvents[0]
+        if (latestEvent && latestEvent.id !== lastEventIdRef.current) {
+          lastEventIdRef.current = latestEvent.id
+          setFeed(prev => [{
+            id: `live-ev-${latestEvent.id}`,
+            time: latestEvent.time,
+            agent: latestEvent.agent,
+            type: latestEvent.type,
+            msg: `${latestEvent.icon} ${latestEvent.msg}`,
+          }, ...prev].slice(0, 8))
+          return
+        }
+      }
+
+      // Otherwise, simulated activity
       if (!currentAgents.length) return
       const agent = currentAgents[Math.floor(Math.random() * currentAgents.length)]
       const tpl = LOG_MSG_TEMPLATES[Math.floor(Math.random() * LOG_MSG_TEMPLATES.length)]
@@ -46,9 +90,7 @@ export default function Dashboard() {
       const msg = msgTpl
         .replace(/{n}/g, () => Math.floor(Math.random() * 900 + 10))
         .replace(/{w}/g, () => Math.floor(Math.random() * 2000 + 200))
-      const now = new Date()
-      const ts = [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':')
-      setFeed(prev => [{ id: Date.now(), time: ts, agent: agent.name, type: tpl.type, msg }, ...prev].slice(0, 8))
+      setFeed(prev => [{ id: Date.now(), time: formatTime(), agent: agent.name, type: tpl.type, msg }, ...prev].slice(0, 8))
     }, 3000)
     return () => clearInterval(t)
   }, [])
